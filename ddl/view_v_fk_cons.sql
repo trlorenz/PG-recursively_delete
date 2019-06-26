@@ -76,6 +76,20 @@ ptab_pk_attrs AS (
           pg_index.indisprimary
   GROUP BY
     fk_constraints.oid
+),
+ptab_uk_attrs AS (
+  SELECT
+    fk_constraints.oid,
+    array_agg(pg_attribute.attname ORDER BY fk_constraints.confkey_subscript) AS ptab_uk_col_names,
+    array_agg(format_type(pg_attribute.atttypid, pg_attribute.atttypmod) ORDER BY fk_constraints.confkey_subscript) AS ptab_uk_col_types
+  FROM
+    pg_attribute
+      INNER JOIN
+    (SELECT *, generate_subscripts(fk_constraints.confkey, 1) AS confkey_subscript FROM fk_constraints) AS fk_constraints
+        ON
+          pg_attribute.attrelid = fk_constraints.confrelid AND pg_attribute.attnum = fk_constraints.confkey[fk_constraints.confkey_subscript]
+  GROUP BY
+    fk_constraints.oid
 )
 SELECT
   fk_constraints.oid,
@@ -92,9 +106,12 @@ SELECT
   fk_constraints.ptab_schema_name,
   fk_constraints.ptab_name,
   ptab_pk_attrs.ptab_pk_col_names,
-  ptab_pk_attrs.ptab_pk_col_types
+  ptab_pk_attrs.ptab_pk_col_types,
+  ptab_uk_attrs.ptab_uk_col_names,
+  ptab_uk_attrs.ptab_uk_col_types
 FROM fk_constraints
   INNER JOIN ctab_pk_attrs USING (oid)
   INNER JOIN ctab_fk_attrs USING (oid)
   INNER JOIN ptab_pk_attrs USING (oid)
+  INNER JOIN ptab_uk_attrs USING (oid)
 ORDER BY fk_constraints.name;
