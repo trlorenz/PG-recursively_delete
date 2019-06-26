@@ -1,4 +1,6 @@
-CREATE OR REPLACE VIEW v_fk_cons AS
+DROP VIEW IF EXISTS v_fk_cons;
+
+CREATE VIEW v_fk_cons AS
 WITH
 fk_constraints AS (
   SELECT
@@ -57,26 +59,6 @@ ctab_fk_attrs AS (
   GROUP BY
     fk_constraints.oid
 ),
-ptab_pk_attrs AS (
-  SELECT
-    fk_constraints.oid,
-    array_agg(pg_attribute.attname ORDER BY pg_index.indkey_subscript) AS ptab_pk_col_names,
-    array_agg(format_type(pg_attribute.atttypid, pg_attribute.atttypmod) ORDER BY pg_index.indkey_subscript) AS ptab_pk_col_types
-  FROM
-    fk_constraints
-      INNER JOIN
-    pg_attribute
-        ON
-          fk_constraints.confrelid = pg_attribute.attrelid
-      INNER JOIN
-    (SELECT *, generate_subscripts(indkey, 1) AS indkey_subscript FROM pg_index) AS pg_index
-        ON
-          pg_attribute.attrelid = pg_index.indrelid AND pg_attribute.attnum = pg_index.indkey[pg_index.indkey_subscript]
-            AND
-          pg_index.indisprimary
-  GROUP BY
-    fk_constraints.oid
-),
 ptab_uk_attrs AS (
   SELECT
     fk_constraints.oid,
@@ -105,13 +87,10 @@ SELECT
   fk_constraints.confrelid AS ptab_oid,
   fk_constraints.ptab_schema_name,
   fk_constraints.ptab_name,
-  ptab_pk_attrs.ptab_pk_col_names,
-  ptab_pk_attrs.ptab_pk_col_types,
   ptab_uk_attrs.ptab_uk_col_names,
   ptab_uk_attrs.ptab_uk_col_types
 FROM fk_constraints
   INNER JOIN ctab_pk_attrs USING (oid)
   INNER JOIN ctab_fk_attrs USING (oid)
-  INNER JOIN ptab_pk_attrs USING (oid)
   INNER JOIN ptab_uk_attrs USING (oid)
 ORDER BY fk_constraints.name;

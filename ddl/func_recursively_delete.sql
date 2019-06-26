@@ -8,20 +8,19 @@ DECLARE
   VAR_circ_depper           JSONB;
   VAR_circ_depper_up        JSONB;
   VAR_circ_deps             JSONB;
+  VAR_ctab_fk_cols_list     TEXT;
+  VAR_ctab_pk_cols_list     TEXT;
   VAR_cte_aux_stmts         TEXT[] DEFAULT ARRAY[]::TEXT[];
   VAR_del_result_rec        RECORD;
   VAR_del_results           JSONB DEFAULT '{}';
   VAR_del_results_cursor    REFCURSOR;
   VAR_final_query           TEXT;
-  VAR_fk_cols_list          TEXT;
   VAR_in                    TEXT;
   VAR_join_comperand_l      TEXT;
   VAR_join_comperand_r      TEXT;
   VAR_pk_col_names          TEXT[] DEFAULT ARRAY[]::TEXT[];
-  VAR_pk_cols_list          TEXT;
   VAR_queue                 JSONB;
   VAR_queue_elem            JSONB;
-  VAR_queue_elem_up         JSONB;
   VAR_recursive_term        TEXT;
   VAR_recursive_term_from   TEXT[];
   VAR_recursive_term_select TEXT[];
@@ -129,19 +128,17 @@ BEGIN
         END LOOP;
       END IF;
 
-      VAR_recursive_term := coalesce(VAR_recursive_term, format('SELECT %s', array_to_string(array_fill('NULL'::TEXT, ARRAY[jsonb_array_length(VAR_queue_elem->'ctab_pk_col_names')]), ', ')));
-
-      VAR_pk_cols_list := string_agg(format('%I', ael), ', ') FROM jsonb_array_elements_text(VAR_queue_elem->'ctab_pk_col_names') ael;
-      VAR_fk_cols_list := string_agg(format('%I', ael), ', ') FROM jsonb_array_elements_text(VAR_queue_elem->'ctab_fk_col_names') ael;
+      VAR_ctab_fk_cols_list := string_agg(format('%I', ael), ', ') FROM jsonb_array_elements_text(VAR_queue_elem->'ctab_fk_col_names') ael;
+      VAR_ctab_pk_cols_list := string_agg(format('%I', ael), ', ') FROM jsonb_array_elements_text(VAR_queue_elem->'ctab_pk_col_names') ael;
 
       IF (VAR_queue_elem->>'depth')::INT != 0 THEN
-        VAR_queue_elem_up := VAR_queue->((VAR_queue_elem->>'i_up')::INT);
-
         VAR_in := format('SELECT %s FROM %I',
-          (SELECT string_agg(format('%I', ael), ', ') FROM jsonb_array_elements_text(VAR_queue_elem_up->'ctab_pk_col_names') ael),
-          VAR_queue_elem_up->>'cte_aux_stmt_name'
+          (SELECT string_agg(format('%I', ael), ', ') FROM jsonb_array_elements_text(VAR_queue_elem->'ptab_uk_col_names') ael),
+          VAR_queue->((VAR_queue_elem->>'i_up')::INT)->>'cte_aux_stmt_name'
         );
       END IF;
+
+      VAR_recursive_term := coalesce(VAR_recursive_term, format('SELECT %s', array_to_string(array_fill('NULL'::TEXT, ARRAY[jsonb_array_length(VAR_queue_elem->'ctab_pk_col_names')]), ', ')));
 
       VAR_cte_aux_stmts := VAR_cte_aux_stmts || format($CTE_AUX_STMT$
         %I AS (
@@ -153,16 +150,15 @@ BEGIN
               %s
             )
             SELECT %s FROM self_ref
-          ) RETURNING %s
+          ) RETURNING *
         )
       $CTE_AUX_STMT$,
         VAR_queue_elem->>'cte_aux_stmt_name',
-        VAR_queue_elem->>'ctab_name', VAR_pk_cols_list,
-        VAR_pk_cols_list,
-        VAR_pk_cols_list, VAR_queue_elem->>'ctab_name', VAR_fk_cols_list, VAR_in,
+        VAR_queue_elem->>'ctab_name', VAR_ctab_pk_cols_list,
+        VAR_ctab_pk_cols_list,
+        VAR_ctab_pk_cols_list, VAR_queue_elem->>'ctab_name', VAR_ctab_fk_cols_list, VAR_in,
         VAR_recursive_term,
-        VAR_pk_cols_list,
-        VAR_pk_cols_list
+        VAR_ctab_pk_cols_list
       );
     END IF;
   END LOOP;
