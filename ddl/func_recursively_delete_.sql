@@ -43,7 +43,7 @@ BEGIN
     'ctab_name'        ,  ARG_table,
     'ctab_pk_col_names',  VAR_pk_col_names,
     'ctab_fk_col_names',  VAR_fk_col_names,
-    'delete_rule'      , _ARG_fk_con->>'delete_rule',
+    'delete_action'    , _ARG_fk_con->>'delete_action',
     --
     'cte_aux_stmt_name',  format('del_%s$%s', VAR_queue_i, _ARG_path[array_upper(_ARG_path, 1)]),
     'depth'            , _ARG_depth,
@@ -52,7 +52,7 @@ BEGIN
     'path'             ,  to_jsonb(_ARG_path)
   );
 
-  IF _ARG_fk_con->>'delete_rule' = 'SET NULL' THEN
+  IF _ARG_fk_con->>'delete_action' = 'n' THEN
     RETURN;
   END IF;
 

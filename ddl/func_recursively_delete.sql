@@ -78,7 +78,7 @@ BEGIN
   SELECT * INTO VAR_circ_deps, VAR_queue FROM _recursively_delete(ARG_table, VAR_pk_col_names);
 
   FOR VAR_queue_elem IN SELECT jsonb_array_elements(VAR_queue) LOOP
-    IF VAR_queue_elem->>'delete_rule' = 'SET NULL' THEN
+    IF VAR_queue_elem->>'delete_action' = 'n' THEN
       VAR_cte_aux_stmts := VAR_cte_aux_stmts || format('%I AS (SELECT NULL)', VAR_queue_elem->>'cte_aux_stmt_name');
     ELSE
       VAR_recursive_term := NULL;
@@ -197,8 +197,8 @@ BEGIN
     IF NOT ARG_for_realz THEN
       FOR VAR_queue_elem IN SELECT jsonb_array_elements(VAR_queue) LOOP
         RAISE INFO '%', format('%9s %1s %1s %s%s%s',
-          (CASE WHEN VAR_queue_elem->>'delete_rule' = 'SET NULL' THEN '~' ELSE VAR_del_results->>(VAR_queue_elem->>'i') END),                      -- N recs deleted (or to be deleted)
-          left(VAR_queue_elem->>'delete_rule', 1),                                                                                                 -- FK constraint type
+          (CASE WHEN VAR_queue_elem->>'delete_action' = 'n' THEN '~' ELSE VAR_del_results->>(VAR_queue_elem->>'i') END),                      -- N recs deleted (or to be deleted)
+          VAR_queue_elem->>'delete_action',                                                                                                 -- FK constraint type
           (CASE WHEN VAR_queue_elem->>'i' IN (SELECT jsonb_array_elements(jsonb_array_elements(VAR_circ_deps))->>'i') THEN E'\u221E' ELSE '' END), -- Circular dependency indicator
           repeat('| ', coalesce((VAR_queue_elem->>'depth')::INTEGER, 0)),                                                                          -- Indentation
           VAR_queue_elem->>'ctab_name',                                                                                                            -- Relation schema/name

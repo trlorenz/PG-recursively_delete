@@ -4,14 +4,7 @@ fk_constraints AS (
   SELECT
     pg_constraint.oid,
     pg_constraint.conname AS name,
-    CASE pg_constraint.confdeltype
-      WHEN 'a'::CHAR THEN 'NO ACTION'::text
-      WHEN 'c'::CHAR THEN 'CASCADE'::text
-      WHEN 'd'::CHAR THEN 'DEFAULT'::text
-      WHEN 'n'::CHAR THEN 'SET NULL'::text
-      WHEN 'r'::CHAR THEN 'RESTRICT'::text
-      ELSE NULL::text
-    END AS delete_rule,
+    pg_constraint.confdeltype AS delete_action,
     pg_constraint.conrelid,
     pg_constraint.confrelid,
     pg_constraint.conkey,
@@ -87,7 +80,7 @@ ptab_pk_attrs AS (
 SELECT
   fk_constraints.oid,
   fk_constraints.name,
-  fk_constraints.delete_rule,
+  fk_constraints.delete_action,
   fk_constraints.conrelid AS ctab_oid,
   fk_constraints.ctab_schema_name,
   fk_constraints.ctab_name,
