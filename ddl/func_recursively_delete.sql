@@ -1,31 +1,31 @@
 CREATE OR REPLACE FUNCTION recursively_delete(
-  ARG_table     REGCLASS,
-  ARG_in        ANYELEMENT,
-  ARG_for_realz BOOL DEFAULT FALSE
+  ARG_table     REGCLASS                ,
+  ARG_in        ANYELEMENT              ,
+  ARG_for_realz BOOL       DEFAULT FALSE
 ) RETURNS INT AS $$
 DECLARE
-  VAR_circ_dep              JSONB;
-  VAR_circ_depper           JSONB;
-  VAR_circ_depper_up        JSONB;
-  VAR_circ_deps             JSONB;
-  VAR_ctab_fk_cols_list     TEXT;
-  VAR_ctab_pk_cols_list     TEXT;
+  VAR_circ_dep              JSONB                         ;
+  VAR_circ_depper           JSONB                         ;
+  VAR_circ_depper_up        JSONB                         ;
+  VAR_circ_deps             JSONB                         ;
+  VAR_ctab_fk_cols_list     TEXT                          ;
+  VAR_ctab_pk_cols_list     TEXT                          ;
   VAR_cte_aux_stmts         TEXT[] DEFAULT ARRAY[]::TEXT[];
-  VAR_del_result_rec        RECORD;
-  VAR_del_results           JSONB DEFAULT '{}';
-  VAR_del_results_cursor    REFCURSOR;
-  VAR_final_query           TEXT;
-  VAR_in                    TEXT;
-  VAR_join_comperand_l      TEXT;
-  VAR_join_comperand_r      TEXT;
+  VAR_del_result_rec        RECORD                        ;
+  VAR_del_results           JSONB DEFAULT '{}'            ;
+  VAR_del_results_cursor    REFCURSOR                     ;
+  VAR_final_query           TEXT                          ;
+  VAR_flat_graph            JSONB                         ;
+  VAR_flat_graph_node       JSONB                         ;
+  VAR_in                    TEXT                          ;
+  VAR_join_comperand_l      TEXT                          ;
+  VAR_join_comperand_r      TEXT                          ;
   VAR_pk_col_names          TEXT[] DEFAULT ARRAY[]::TEXT[];
-  VAR_queue                 JSONB;
-  VAR_queue_elem            JSONB;
-  VAR_recursive_term        TEXT;
-  VAR_recursive_term_from   TEXT[];
-  VAR_recursive_term_select TEXT[];
-  VAR_recursive_term_where  TEXT[];
-  VAR_selects_for_union     TEXT[];
+  VAR_recursive_term        TEXT                          ;
+  VAR_recursive_term_from   TEXT[]                        ;
+  VAR_recursive_term_select TEXT[]                        ;
+  VAR_recursive_term_where  TEXT[]                        ;
+  VAR_selects_for_union     TEXT[]                        ;
 BEGIN
   -- ...
   SELECT array_agg(pg_attribute.attname ORDER BY pg_index.indkey_subscript) AS ptab_pk_col_names INTO VAR_pk_col_names
@@ -74,25 +74,25 @@ BEGIN
     END CASE;
   END IF;
 
-  SELECT * INTO VAR_circ_deps, VAR_queue FROM _recursively_delete(ARG_table, VAR_pk_col_names);
+  SELECT * INTO VAR_circ_deps, VAR_flat_graph FROM _recursively_delete(ARG_table, VAR_pk_col_names);
 
-  FOR VAR_queue_elem IN SELECT jsonb_array_elements(VAR_queue) LOOP
-    IF VAR_queue_elem->>'delete_action' = 'n' THEN
-      VAR_cte_aux_stmts := VAR_cte_aux_stmts || format('%I AS (SELECT NULL)', VAR_queue_elem->>'cte_aux_stmt_name');
+  FOR VAR_flat_graph_node IN SELECT jsonb_array_elements(VAR_flat_graph) LOOP
+    IF VAR_flat_graph_node->>'delete_action' = 'n' THEN
+      VAR_cte_aux_stmts := VAR_cte_aux_stmts || format('%I AS (SELECT NULL)', VAR_flat_graph_node->>'cte_aux_stmt_name');
     ELSE
       VAR_recursive_term := NULL;
 
-      IF (VAR_queue_elem->>'depth')::INT != 0 THEN
+      IF (VAR_flat_graph_node->>'depth')::INT != 0 THEN
       -- ^The root CTE aux statement is never allowed to be recursive.
 
         <<LOOP_BUILDING_RECURSIVE_TERM>>
         FOR VAR_circ_dep IN SELECT jsonb_array_elements(VAR_circ_deps) LOOP
-          IF VAR_queue_elem->>'i' IN (SELECT jsonb_array_elements(VAR_circ_dep)->>'i') THEN
+          IF VAR_flat_graph_node->>'i' IN (SELECT jsonb_array_elements(VAR_circ_dep)->>'i') THEN
             VAR_recursive_term_from  := ARRAY[]::TEXT[];
             VAR_recursive_term_where := ARRAY[]::TEXT[];
 
-            VAR_recursive_term_select := array_agg(format('%I.%I', format('t%s', VAR_queue_elem->>'i'), ael))
-              FROM jsonb_array_elements_text(VAR_queue_elem->'ctab_pk_col_names') ael;
+            VAR_recursive_term_select := array_agg(format('%I.%I', format('t%s', VAR_flat_graph_node->>'i'), ael))
+              FROM jsonb_array_elements_text(VAR_flat_graph_node->'ctab_pk_col_names') ael;
 
             FOR VAR_circ_depper IN SELECT * FROM jsonb_array_elements(VAR_circ_dep) LOOP
               VAR_recursive_term_from := VAR_recursive_term_from || format('%s %I',
@@ -102,11 +102,11 @@ BEGIN
               VAR_join_comperand_l := string_agg(format('%I.%I', format('t%s', VAR_circ_depper->>'i'), ael), ', ')
                 FROM jsonb_array_elements_text(VAR_circ_depper->'ctab_fk_col_names') ael;
 
-              VAR_circ_depper_up := VAR_queue->((VAR_circ_depper->>'i_up')::INT);
+              VAR_circ_depper_up := VAR_flat_graph->((VAR_circ_depper->>'i_up')::INT);
 
-              IF VAR_queue_elem->>'ctab_oid' = VAR_circ_depper_up->>'ctab_oid' THEN
+              IF VAR_flat_graph_node->>'ctab_oid' = VAR_circ_depper_up->>'ctab_oid' THEN
                 VAR_join_comperand_r := string_agg(format('self_ref.%I', ael), ', ')
-                  FROM jsonb_array_elements_text(VAR_queue_elem->'ctab_pk_col_names') ael;
+                  FROM jsonb_array_elements_text(VAR_flat_graph_node->'ctab_pk_col_names') ael;
               ELSE
                 VAR_join_comperand_r := string_agg(format('%I.%I', format('t%s', VAR_circ_depper_up->>'i'), ael), ', ')
                   FROM jsonb_array_elements_text(VAR_circ_depper_up->'ctab_pk_col_names') ael;
@@ -128,17 +128,17 @@ BEGIN
         END LOOP;
       END IF;
 
-      VAR_ctab_fk_cols_list := string_agg(format('%I', ael), ', ') FROM jsonb_array_elements_text(VAR_queue_elem->'ctab_fk_col_names') ael;
-      VAR_ctab_pk_cols_list := string_agg(format('%I', ael), ', ') FROM jsonb_array_elements_text(VAR_queue_elem->'ctab_pk_col_names') ael;
+      VAR_ctab_fk_cols_list := string_agg(format('%I', ael), ', ') FROM jsonb_array_elements_text(VAR_flat_graph_node->'ctab_fk_col_names') ael;
+      VAR_ctab_pk_cols_list := string_agg(format('%I', ael), ', ') FROM jsonb_array_elements_text(VAR_flat_graph_node->'ctab_pk_col_names') ael;
 
-      IF (VAR_queue_elem->>'depth')::INT != 0 THEN
+      IF (VAR_flat_graph_node->>'depth')::INT != 0 THEN
         VAR_in := format('SELECT %s FROM %I',
-          (SELECT string_agg(format('%I', ael), ', ') FROM jsonb_array_elements_text(VAR_queue_elem->'ptab_uk_col_names') ael),
-          VAR_queue->((VAR_queue_elem->>'i_up')::INT)->>'cte_aux_stmt_name'
+          (SELECT string_agg(format('%I', ael), ', ') FROM jsonb_array_elements_text(VAR_flat_graph_node->'ptab_uk_col_names') ael),
+          VAR_flat_graph->((VAR_flat_graph_node->>'i_up')::INT)->>'cte_aux_stmt_name'
         );
       END IF;
 
-      VAR_recursive_term := coalesce(VAR_recursive_term, format('SELECT %s', array_to_string(array_fill('NULL'::TEXT, ARRAY[jsonb_array_length(VAR_queue_elem->'ctab_pk_col_names')]), ', ')));
+      VAR_recursive_term := coalesce(VAR_recursive_term, format('SELECT %s', array_to_string(array_fill('NULL'::TEXT, ARRAY[jsonb_array_length(VAR_flat_graph_node->'ctab_pk_col_names')]), ', ')));
 
       VAR_cte_aux_stmts := VAR_cte_aux_stmts || format($CTE_AUX_STMT$
         %I AS (
@@ -153,19 +153,19 @@ BEGIN
           ) RETURNING *
         )
       $CTE_AUX_STMT$,
-        VAR_queue_elem->>'cte_aux_stmt_name',
-        VAR_queue_elem->>'ctab_name', VAR_ctab_pk_cols_list,
+        VAR_flat_graph_node->>'cte_aux_stmt_name',
+        VAR_flat_graph_node->>'ctab_name', VAR_ctab_pk_cols_list,
         VAR_ctab_pk_cols_list,
-        VAR_ctab_pk_cols_list, VAR_queue_elem->>'ctab_name', VAR_ctab_fk_cols_list, VAR_in,
+        VAR_ctab_pk_cols_list, VAR_flat_graph_node->>'ctab_name', VAR_ctab_fk_cols_list, VAR_in,
         VAR_recursive_term,
         VAR_ctab_pk_cols_list
       );
     END IF;
   END LOOP;
 
-  FOR VAR_queue_elem IN SELECT jsonb_array_elements(VAR_queue) LOOP
+  FOR VAR_flat_graph_node IN SELECT jsonb_array_elements(VAR_flat_graph) LOOP
     VAR_selects_for_union := VAR_selects_for_union || format('SELECT %L AS queue_i, count(*) AS n_del FROM %I',
-      VAR_queue_elem->>'i', VAR_queue_elem->>'cte_aux_stmt_name'
+      VAR_flat_graph_node->>'i', VAR_flat_graph_node->>'cte_aux_stmt_name'
     );
   END LOOP;
 
@@ -191,14 +191,14 @@ BEGIN
     END LOOP;
 
     IF NOT ARG_for_realz THEN
-      FOR VAR_queue_elem IN SELECT jsonb_array_elements(VAR_queue) LOOP
+      FOR VAR_flat_graph_node IN SELECT jsonb_array_elements(VAR_flat_graph) LOOP
         RAISE INFO '%', format('%9s %1s %1s %s%s%s',
-          (CASE WHEN VAR_queue_elem->>'delete_action' = 'n' THEN '~' ELSE VAR_del_results->>(VAR_queue_elem->>'i') END),                      -- N recs deleted (or to be deleted)
-          VAR_queue_elem->>'delete_action',                                                                                                 -- FK constraint type
-          (CASE WHEN VAR_queue_elem->>'i' IN (SELECT jsonb_array_elements(jsonb_array_elements(VAR_circ_deps))->>'i') THEN E'\u221E' ELSE '' END), -- Circular dependency indicator
-          repeat('| ', coalesce((VAR_queue_elem->>'depth')::INTEGER, 0)),                                                                          -- Indentation
-          VAR_queue_elem->>'ctab_name',                                                                                                            -- Relation schema/name
-          (CASE WHEN (VAR_queue_elem->>'depth')::INT = 0 THEN '' ELSE format('.%s', VAR_queue_elem->>'ctab_fk_col_names') END)                     -- Relation FK cols (referencing parent)
+          (CASE WHEN VAR_flat_graph_node->>'delete_action' = 'n' THEN '~' ELSE VAR_del_results->>(VAR_flat_graph_node->>'i') END),                      -- N recs deleted (or to be deleted)
+          VAR_flat_graph_node->>'delete_action',                                                                                                        -- FK constraint type
+          (CASE WHEN VAR_flat_graph_node->>'i' IN (SELECT jsonb_array_elements(jsonb_array_elements(VAR_circ_deps))->>'i') THEN E'\u221E' ELSE '' END), -- Circular dependency indicator
+          repeat('| ', coalesce((VAR_flat_graph_node->>'depth')::INTEGER, 0)),                                                                          -- Indentation
+          VAR_flat_graph_node->>'ctab_name',                                                                                                            -- Relation schema/name
+          (CASE WHEN (VAR_flat_graph_node->>'depth')::INT = 0 THEN '' ELSE format('.%s', VAR_flat_graph_node->>'ctab_fk_col_names') END)                -- Relation FK cols (referencing parent)
         );
       END LOOP;
 

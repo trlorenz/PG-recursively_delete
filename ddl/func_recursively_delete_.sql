@@ -1,22 +1,22 @@
 CREATE OR REPLACE FUNCTION _recursively_delete(
-         ARG_table        REGCLASS,
-         ARG_pk_col_names TEXT[],
-        _ARG_depth        INT       DEFAULT  0,
-        _ARG_fk_con       JSONB     DEFAULT  NULL,
-        _ARG_queue_i_up   INT       DEFAULT  NULL,
-        _ARG_path         TEXT[]    DEFAULT  ARRAY[]::TEXT[],
-  INOUT _ARG_circ_deps    JSONB     DEFAULT '[]',
-  INOUT _ARG_queue        JSONB     DEFAULT '[]'
+         ARG_table           REGCLASS                         ,
+         ARG_pk_col_names    TEXT[]                           ,
+        _ARG_depth           INT      DEFAULT  0              ,
+        _ARG_fk_con          JSONB    DEFAULT  NULL           ,
+        _ARG_flat_graph_i_up INT      DEFAULT  NULL           ,
+        _ARG_path            TEXT[]   DEFAULT  ARRAY[]::TEXT[],
+  INOUT _ARG_circ_deps       JSONB    DEFAULT '[]'            ,
+  INOUT _ARG_flat_graph      JSONB    DEFAULT '[]'
 ) AS $$
 DECLARE
-  VAR_circ_dep          JSONB;
-  VAR_ctab_fk_col_names JSONB;
-  VAR_ctab_pk_col_names JSONB;
+  VAR_circ_dep          JSONB ;
+  VAR_ctab_fk_col_names JSONB ;
+  VAR_ctab_pk_col_names JSONB ;
   VAR_fk_con_rec        RECORD;
-  VAR_i                 INT;
-  VAR_path_pos_of_oid   INT;
-  VAR_queue_elem        JSONB;
-  VAR_queue_i           INT;
+  VAR_flat_graph_i      INT   ;
+  VAR_flat_graph_node   JSONB ;
+  VAR_i                 INT   ;
+  VAR_path_pos_of_oid   INT   ;
 BEGIN
   IF _ARG_depth = 0 THEN
     _ARG_path := _ARG_path || ARRAY['ROOT'];
@@ -32,22 +32,24 @@ BEGIN
     VAR_ctab_pk_col_names := _ARG_fk_con->>'ctab_pk_col_names';
   END IF;
 
-  VAR_queue_i := jsonb_array_length(_ARG_queue);
+  VAR_flat_graph_i := jsonb_array_length(_ARG_flat_graph);
 
-  -- The "queue" is a collection of foreign-key-constraint-describing objects ("queue_elems")
-  -- arranged in correct order for composition of the final query -- sort of a flattened graph.
-  -- (Note that while queue_elem->>'i' always reports the index of a queue_elem in the queue,
-  -- queue_elem->>'i_up' reports the index of the element's parent, which isn't necessarily i - 1.)
-  _ARG_queue := _ARG_queue || jsonb_build_object(
+  -- The "flat graph" is a collection of foreign-key-constraint-describing objects ("nodes")
+  -- arranged in correct order for composition of the final query.
+
+  -- (Note that while flat_graph_node->>'i' always reports the index of a flat graph node in the
+  -- flat graph, flat_graph_node->>'i_up' reports the index of the node's parent, which isn't
+  -- necessarily i - 1.)
+  _ARG_flat_graph := _ARG_flat_graph || jsonb_build_object(
     'ctab_fk_col_names',  VAR_ctab_fk_col_names,
     'ctab_name'        ,  ARG_table,
     'ctab_oid'         , _ARG_fk_con->>'ctab_oid',
     'ctab_pk_col_names',  VAR_ctab_pk_col_names,
-    'cte_aux_stmt_name',  format('del_%s$%s', VAR_queue_i, _ARG_path[array_upper(_ARG_path, 1)]),
+    'cte_aux_stmt_name',  format('del_%s$%s', VAR_flat_graph_i, _ARG_path[array_upper(_ARG_path, 1)]),
     'delete_action'    , _ARG_fk_con->>'delete_action',
     'depth'            , _ARG_depth,
-    'i'                ,  VAR_queue_i,
-    'i_up'             , _ARG_queue_i_up,
+    'i'                ,  VAR_flat_graph_i,
+    'i_up'             , _ARG_flat_graph_i_up,
     'path'             ,  to_jsonb(_ARG_path),
     'ptab_uk_col_names', _ARG_fk_con->'ptab_uk_col_names'
   );
@@ -69,9 +71,9 @@ BEGIN
       -- Populate VAR_circ_dep with the interdependent queue elements comprising the circle (which
       -- we'll call "deppers").
       FOR VAR_i IN VAR_path_pos_of_oid .. array_length(_ARG_path, 1) LOOP
-        FOR VAR_queue_elem IN SELECT jsonb_array_elements(_ARG_queue) LOOP
-          IF VAR_queue_elem->'path' = to_jsonb(_ARG_path[1:VAR_i]) THEN
-            VAR_circ_dep := VAR_circ_dep || VAR_queue_elem;
+        FOR VAR_flat_graph_node IN SELECT jsonb_array_elements(_ARG_flat_graph) LOOP
+          IF VAR_flat_graph_node->'path' = to_jsonb(_ARG_path[1:VAR_i]) THEN
+            VAR_circ_dep := VAR_circ_dep || VAR_flat_graph_node;
 
             EXIT;
           END IF;
@@ -86,18 +88,18 @@ BEGIN
       CONTINUE FK_CON;
     END IF;
 
-    SELECT * INTO _ARG_circ_deps, _ARG_queue
+    SELECT * INTO _ARG_circ_deps, _ARG_flat_graph
     FROM _recursively_delete(
        format('%I.%I', VAR_fk_con_rec.ctab_schema_name, VAR_fk_con_rec.ctab_name),
        NULL,
        --
       _ARG_depth + 1,
        to_jsonb(VAR_fk_con_rec),
-       VAR_queue_i,
+       VAR_flat_graph_i,
       _ARG_path || VAR_fk_con_rec.oid::TEXT,
       --
       _ARG_circ_deps,
-      _ARG_queue
+      _ARG_flat_graph
     );
   END LOOP;
 END;
