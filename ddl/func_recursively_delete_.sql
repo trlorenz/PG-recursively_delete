@@ -54,7 +54,7 @@ BEGIN
     'ptab_uk_col_names', _ARG_fk_con->'ptab_uk_col_names'
   );
 
-  IF _ARG_fk_con->>'delete_action' = 'n' THEN
+  IF _ARG_fk_con->>'delete_action' IN ('d', 'n') THEN
     RETURN;
   END IF;
 

@@ -77,7 +77,7 @@ BEGIN
   SELECT * INTO VAR_circ_deps, VAR_flat_graph FROM _recursively_delete(ARG_table, VAR_pk_col_names);
 
   FOR VAR_flat_graph_node IN SELECT jsonb_array_elements(VAR_flat_graph) LOOP
-    IF VAR_flat_graph_node->>'delete_action' = 'n' THEN
+    IF VAR_flat_graph_node->>'delete_action' IN ('d', 'n') THEN
       VAR_cte_aux_stmts := VAR_cte_aux_stmts || format('%I AS (SELECT NULL)', VAR_flat_graph_node->>'cte_aux_stmt_name');
     ELSE
       VAR_recursive_term := NULL;
@@ -193,7 +193,7 @@ BEGIN
     IF NOT ARG_for_realz THEN
       FOR VAR_flat_graph_node IN SELECT jsonb_array_elements(VAR_flat_graph) LOOP
         RAISE INFO '%', format('%9s %1s %1s %s%s%s',
-          (CASE WHEN VAR_flat_graph_node->>'delete_action' = 'n' THEN '~' ELSE VAR_del_results->>(VAR_flat_graph_node->>'i') END),                      -- N recs deleted (or to be deleted)
+          (CASE WHEN VAR_flat_graph_node->>'delete_action' IN ('d', 'n') THEN '~' ELSE VAR_del_results->>(VAR_flat_graph_node->>'i') END),              -- N recs deleted (or to be deleted)
           VAR_flat_graph_node->>'delete_action',                                                                                                        -- FK constraint type
           (CASE WHEN VAR_flat_graph_node->>'i' IN (SELECT jsonb_array_elements(jsonb_array_elements(VAR_circ_deps))->>'i') THEN E'\u221E' ELSE '' END), -- Circular dependency indicator
           repeat('| ', coalesce((VAR_flat_graph_node->>'depth')::INTEGER, 0)),                                                                          -- Indentation

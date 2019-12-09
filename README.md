@@ -6,7 +6,7 @@ A PL/pgSQL function to delete records and foreign-key dependents, regardless of 
 - Performs deletion in a single query using recursive CTEs.
 - Handles circular dependencies, intra- and inter-table.
 - Handles composite keys.
-- Skips 'set null' constraints.
+- Skips 'set default' and 'set null' constraints.
 
 ### Disclaimers
 
@@ -106,7 +106,7 @@ INFO:          0 a ∞ | | | broadcasts.["conversation_id"]
 
 The first three columns are, at each given node:
 
-1. The number of records to be deleted. ('~' indicates that no deletion will be attempted at the node on account of a 'set null' constraint.)
+1. The number of records to be deleted. ('~' indicates that no deletion will be attempted at the node on account of a 'set default' or 'set null' constraint.)
 2. The FK constraint type: one of 'a', 'r', 'c', 'n', or 'd' ('no action', 'restrict', 'cascade', 'set null', or 'set default').
 3. An indicator of participation in a circular dependency.
 
@@ -136,7 +136,7 @@ select recursively_delete('widgets', ARRAY[['foo', '22'], ['bar', '33'], ['baz',
  recursively_delete
 --------------------
                   3
-(3 rows)
+(1 row)
 ```
 
 *Note that the order of the key columns in each subarray above isn't arbitrary; recursively_delete assumes composite key columns are given in the same order as they were given in the applicable index definition (using pg_index.indkey_subscript).*
