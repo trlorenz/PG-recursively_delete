@@ -141,4 +141,4 @@ select recursively_delete('widgets', ARRAY[['foo', '22'], ['bar', '33'], ['baz',
 
 *Note that the order of the key columns in each subarray above isn't arbitrary; recursively_delete assumes composite key columns are given in the same order as they were given in the applicable index definition (using pg_index.indkey_subscript).*
 
-*Note also that, in this contrived example, the types of the columns of the composite primary key are TEXT and INTEGER. Since the elements of a Postgres Array must be of a consistent type, a situation like this calls for using TEXT elements; Postgres will perform the necessary coercions.*
+*Note also that, in this contrived example, the types of the columns of the composite primary key are TEXT and INTEGER. Since the elements of a Postgres Array must be of a consistent type, a situation like this calls for using untyped text elements; Postgres will perform the necessary coercions.*
