@@ -21,7 +21,7 @@ BEGIN
   IF _ARG_depth = 0 THEN
     _ARG_path := _ARG_path || ARRAY['ROOT'];
 
-    VAR_ctab_pk_col_names := to_json(ARG_pk_col_names);
+    VAR_ctab_pk_col_names := array_to_json(ARG_pk_col_names)::JSONB;
 
     -- Not really a statement of truth, but a convenient thing to pretend. For the initial
     -- "bootstrap" CTE auxiliary statement, this HACK takes care of equating the user's ARG_in with
@@ -50,7 +50,7 @@ BEGIN
     'depth'            , _ARG_depth,
     'i'                ,  VAR_flat_graph_i,
     'i_up'             , _ARG_flat_graph_i_up,
-    'path'             ,  to_jsonb(_ARG_path),
+    'path'             ,  array_to_json(_ARG_path)::JSONB,
     'ptab_uk_col_names', _ARG_fk_con->'ptab_uk_col_names'
   );
 
@@ -72,7 +72,7 @@ BEGIN
       -- we'll call "deppers").
       FOR VAR_i IN VAR_path_pos_of_oid .. array_length(_ARG_path, 1) LOOP
         FOR VAR_flat_graph_node IN SELECT jsonb_array_elements(_ARG_flat_graph) LOOP
-          IF VAR_flat_graph_node->'path' = to_jsonb(_ARG_path[1:VAR_i]) THEN
+          IF VAR_flat_graph_node->'path' = array_to_json(_ARG_path[1:VAR_i])::JSONB THEN
             VAR_circ_dep := VAR_circ_dep || VAR_flat_graph_node;
 
             EXIT;
@@ -94,7 +94,7 @@ BEGIN
        NULL,
        --
       _ARG_depth + 1,
-       to_jsonb(VAR_fk_con_rec),
+       row_to_json(VAR_fk_con_rec)::JSONB,
        VAR_flat_graph_i,
       _ARG_path || VAR_fk_con_rec.oid::TEXT,
       --

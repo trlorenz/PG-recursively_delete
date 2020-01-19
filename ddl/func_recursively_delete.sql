@@ -61,13 +61,13 @@ BEGIN
         IF array_ndims(ARG_in) = 1 THEN
           VAR_in := format('(%s)', (SELECT string_agg(format('%L', ael), ', ') FROM unnest(ARG_in) ael));
         ELSE
-          VAR_in := string_agg(format('(%s)', (SELECT string_agg(format('%L', ael), ', ') FROM jsonb_array_elements_text(ael) ael)), ', ') FROM jsonb_array_elements(to_jsonb(ARG_in)) ael;
+          VAR_in := string_agg(format('(%s)', (SELECT string_agg(format('%L', ael), ', ') FROM jsonb_array_elements_text(ael) ael)), ', ') FROM jsonb_array_elements(array_to_json(ARG_in)::JSONB) ael;
         END IF;
       WHEN 'integer[]' THEN
         IF array_ndims(ARG_in) = 1 THEN
           VAR_in := format('(%s)', array_to_string(ARG_in, ', '));
         ELSE
-          VAR_in := string_agg(format('(%s)', (SELECT string_agg(ael, ', ') FROM jsonb_array_elements_text(ael) ael)), ', ') FROM jsonb_array_elements(to_jsonb(ARG_in)) ael;
+          VAR_in := string_agg(format('(%s)', (SELECT string_agg(ael, ', ') FROM jsonb_array_elements_text(ael) ael)), ', ') FROM jsonb_array_elements(array_to_json(ARG_in)::JSONB) ael;
         END IF;
       ELSE
         RAISE 'ARG_in "%" for %-column primary key is of an unexpected type: %', ARG_in, array_length(VAR_pk_col_names, 1), pg_typeof(ARG_in);
@@ -187,7 +187,7 @@ BEGIN
         EXIT;
       END IF;
 
-      VAR_del_results := jsonb_set(VAR_del_results, ARRAY[VAR_del_result_rec.queue_i], to_jsonb(VAR_del_result_rec.n_del));
+      VAR_del_results := jsonb_set(VAR_del_results, ARRAY[VAR_del_result_rec.queue_i], VAR_del_result_rec.n_del::TEXT::JSONB);
     END LOOP;
 
     IF NOT ARG_for_realz THEN
