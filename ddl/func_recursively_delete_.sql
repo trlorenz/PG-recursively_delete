@@ -1,4 +1,6 @@
-CREATE OR REPLACE FUNCTION _recursively_delete(
+DROP FUNCTION IF EXISTS _recursively_delete;
+
+CREATE FUNCTION _recursively_delete(
          ARG_table           REGCLASS                         ,
          ARG_pk_col_names    TEXT[]                           ,
         _ARG_depth           INT      DEFAULT  0              ,

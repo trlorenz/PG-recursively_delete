@@ -1,4 +1,6 @@
-CREATE OR REPLACE FUNCTION recursively_delete(
+DROP FUNCTION IF EXISTS recursively_delete;
+
+CREATE FUNCTION recursively_delete(
   ARG_table     REGCLASS                ,
   ARG_in        ANYELEMENT              ,
   ARG_for_realz BOOL       DEFAULT FALSE
