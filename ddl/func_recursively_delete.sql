@@ -44,9 +44,9 @@ BEGIN
 
   IF array_length(VAR_pk_col_names, 1) = 1 THEN
     CASE pg_typeof(ARG_in)::TEXT
-      WHEN 'character varying', 'text' THEN
-        VAR_in := ARG_in;
-      WHEN 'character varying[]', 'text[]' THEN
+      WHEN 'character varying', 'text', 'uuid' THEN
+        VAR_in := format('%L', ARG_in);
+      WHEN 'character varying[]', 'text[]', 'uuid' THEN
         VAR_in := string_agg(format('%L', ael), ', ') FROM unnest(ARG_in) ael;
       WHEN 'integer' THEN
         VAR_in := ARG_in;
@@ -57,9 +57,7 @@ BEGIN
     END CASE;
   ELSE
     CASE pg_typeof(ARG_in)::TEXT
-      WHEN 'character varying', 'text' THEN
-        VAR_in := ARG_in;
-      WHEN 'character varying[]', 'text[]' THEN
+      WHEN 'character varying[]', 'text[]', 'uuid[]' THEN
         IF array_ndims(ARG_in) = 1 THEN
           VAR_in := format('(%s)', (SELECT string_agg(format('%L', ael), ', ') FROM unnest(ARG_in) ael));
         ELSE
