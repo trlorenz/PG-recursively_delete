@@ -14,7 +14,7 @@ A PL/pgSQL function to delete records and foreign-key dependents, regardless of 
 
 - recursively_delete was written not for transactional use-cases, but as an administration tool for special occasions. Performance wasn't the main consideration.
 
-- recursively_delete was developed for PostgreSQL 10.10. It might work for other versions; it might not. (Feedback is welcome.)
+- recursively_delete was developed for PostgreSQL 10.10. It might work for other versions; it might not. (Feedback is welcome!)
 
 ### Signature
 
@@ -44,7 +44,14 @@ Possibilities include:
 - An array of integers: ARRAY[22, 33, 44]
 - A string: 'foo'::TEXT
 - An array of strings: ARRAY['foo', 'bar', 'baz']
-- A subquery: 'SELECT id FROM my_table WHERE on_the_chopping_block = true'::TEXT
+- A uuid: '12345678-90ab-cdef-1234-567890abcdef'::UUID
+- An array of uuids: ARRAY['12345678-90ab-cdef-1234-567890abcdef', '12345678-90ab-cdef-1234-567890abcdef', '12345678-90ab-cdef-1234-567890abcdef']
+- For [composite keys](#delete-three-records-on-a-composite-primary-key), an array of arrays:
+  -  ARRAY[[22, 33], [44, 55], [66, 77]]
+  -  ARRAY[['22', 'foo'], ['33', 'bar'], ['44', 'baz']]
+- A subquery returning one of the above:
+  - (SELECT array_agg(id) FROM my_table WHERE on_the_chopping_block = true)
+  - (SELECT array_agg(ARRAY[id1::TEXT, id2::TEXT, id3::TEXT]) FROM my_table WHERE on_the_chopping_block = true)
 
 *Note that since ANYELEMENT considers untyped text to be type-ambiguous, it's necessary to explicitly type any text value given for ARG_in (e.g. 'foo'::TEXT).*
 
@@ -63,11 +70,15 @@ recursively_delete returns the number of records **explicitly** deleted (not inc
 ##### Preview the deletion of a single record:
 
 ```PLpgSQL
-\set VERBOSITY terse -- Clobber context.
+-- Clobber noisy context in output:
+
+\set VERBOSITY terse
+
+-- Then...
 
 select recursively_delete('users', 4402);
 
--- or --
+-- ...or:
 
 select recursively_delete('users', 4402, false);
 ```
