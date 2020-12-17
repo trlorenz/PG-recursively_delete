@@ -6,28 +6,30 @@ CREATE FUNCTION recursively_delete(
   ARG_for_realz BOOL       DEFAULT FALSE
 ) RETURNS INT AS $$
 DECLARE
-  VAR_circ_dep              JSONB                         ;
-  VAR_circ_depper           JSONB                         ;
-  VAR_circ_depper_up        JSONB                         ;
-  VAR_circ_deps             JSONB                         ;
-  VAR_ctab_fk_cols_list     TEXT                          ;
-  VAR_ctab_pk_cols_list     TEXT                          ;
-  VAR_cte_aux_stmts         TEXT[] DEFAULT ARRAY[]::TEXT[];
-  VAR_del_result_rec        RECORD                        ;
-  VAR_del_results           JSONB DEFAULT '{}'            ;
-  VAR_del_results_cursor    REFCURSOR                     ;
-  VAR_final_query           TEXT                          ;
-  VAR_flat_graph            JSONB                         ;
-  VAR_flat_graph_node       JSONB                         ;
-  VAR_in                    TEXT                          ;
-  VAR_join_comperand_l      TEXT                          ;
-  VAR_join_comperand_r      TEXT                          ;
-  VAR_pk_col_names          TEXT[] DEFAULT ARRAY[]::TEXT[];
-  VAR_recursive_term        TEXT                          ;
-  VAR_recursive_term_from   TEXT[]                        ;
-  VAR_recursive_term_select TEXT[]                        ;
-  VAR_recursive_term_where  TEXT[]                        ;
-  VAR_selects_for_union     TEXT[]                        ;
+  VAR_version               TEXT      DEFAULT '0.1.1'        ;
+  --
+  VAR_circ_dep              JSONB                            ;
+  VAR_circ_depper           JSONB                            ;
+  VAR_circ_depper_up        JSONB                            ;
+  VAR_circ_deps             JSONB                            ;
+  VAR_ctab_fk_cols_list     TEXT                             ;
+  VAR_ctab_pk_cols_list     TEXT                             ;
+  VAR_cte_aux_stmts         TEXT[]    DEFAULT ARRAY[]::TEXT[];
+  VAR_del_result_rec        RECORD                           ;
+  VAR_del_results           JSONB     DEFAULT '{}'           ;
+  VAR_del_results_cursor    REFCURSOR                        ;
+  VAR_final_query           TEXT                             ;
+  VAR_flat_graph            JSONB                            ;
+  VAR_flat_graph_node       JSONB                            ;
+  VAR_in                    TEXT                             ;
+  VAR_join_comperand_l      TEXT                             ;
+  VAR_join_comperand_r      TEXT                             ;
+  VAR_pk_col_names          TEXT[]    DEFAULT ARRAY[]::TEXT[];
+  VAR_recursive_term        TEXT                             ;
+  VAR_recursive_term_from   TEXT[]                           ;
+  VAR_recursive_term_select TEXT[]                           ;
+  VAR_recursive_term_where  TEXT[]                           ;
+  VAR_selects_for_union     TEXT[]                           ;
 BEGIN
   -- ...
   SELECT array_agg(pg_attribute.attname ORDER BY pg_index.indkey_subscript) AS ptab_pk_col_names INTO VAR_pk_col_names
@@ -73,6 +75,8 @@ BEGIN
         RAISE 'ARG_in "%" for %-column primary key is of an unexpected type: %', ARG_in, array_length(VAR_pk_col_names, 1), pg_typeof(ARG_in);
     END CASE;
   END IF;
+
+  VAR_in := coalesce(VAR_in, 'NULL');
 
   SELECT * INTO VAR_circ_deps, VAR_flat_graph FROM _recursively_delete(ARG_table, VAR_pk_col_names);
 
@@ -191,6 +195,9 @@ BEGIN
     END LOOP;
 
     IF NOT ARG_for_realz THEN
+      RAISE INFO 'DAMAGE PREVIEW (recursively_delete v%)', VAR_version;
+      RAISE INFO '';
+
       FOR VAR_flat_graph_node IN SELECT jsonb_array_elements(VAR_flat_graph) LOOP
         RAISE INFO '%', format('%9s %1s %1s %s%s%s',
           (CASE WHEN VAR_flat_graph_node->>'delete_action' IN ('d', 'n') THEN '~' ELSE VAR_del_results->>(VAR_flat_graph_node->>'i') END),              -- N recs deleted (or to be deleted)
@@ -201,6 +208,8 @@ BEGIN
           (CASE WHEN (VAR_flat_graph_node->>'depth')::INT = 0 THEN '' ELSE format('.%s', VAR_flat_graph_node->>'ctab_fk_col_names') END)                -- Relation FK cols (referencing parent)
         );
       END LOOP;
+
+      RAISE INFO '';
 
       -- 'ABORT': Five characters.
       RAISE EXCEPTION USING errcode = 'ABORT';

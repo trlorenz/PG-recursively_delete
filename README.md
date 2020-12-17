@@ -14,7 +14,7 @@ A PL/pgSQL function to delete records and foreign-key dependents, regardless of 
 
 - recursively_delete was written not for transactional use-cases, but as an administration tool for special occasions. Performance wasn't the main consideration.
 
-- recursively_delete was developed for PostgreSQL 10.10. It might work for other versions; it might not. (Feedback is welcome!)
+- recursively_delete was developed for PostgreSQL 10.10. It might work for other versions; it might not. (Feedback is welcome!) UPDATE 2020-12-17: Been using recursively_delete on PG 13.1 for some months, now, with no issues.
 
 ### Signature
 
@@ -53,7 +53,7 @@ Possibilities include:
   - (SELECT array_agg(id) FROM my_table WHERE on_the_chopping_block = true)
   - (SELECT array_agg(ARRAY[id1::TEXT, id2::TEXT, id3::TEXT]) FROM my_table WHERE on_the_chopping_block = true)
 
-*Note that since ANYELEMENT considers untyped text to be type-ambiguous, it's necessary to explicitly type any text value given for ARG_in (e.g. 'foo'::TEXT).*
+*Note that since ANYELEMENT considers untyped text to be type-ambiguous, it's necessary to explicitly type any text value given for ARG_in (e.g. 'foo'::TEXT). Otherwise brace yourself for something like 'ERROR:  could not determine polymorphic type because input has type unknown'.*
 
 ##### ARG_for_realz
 
