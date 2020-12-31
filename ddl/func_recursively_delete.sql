@@ -6,7 +6,7 @@ CREATE FUNCTION recursively_delete(
   ARG_for_realz BOOL       DEFAULT FALSE
 ) RETURNS INT AS $$
 DECLARE
-  VAR_version               TEXT      DEFAULT '0.1.1'        ;
+  VAR_version               TEXT      DEFAULT '0.1.2'        ;
   --
   VAR_circ_dep              JSONB                            ;
   VAR_circ_depper           JSONB                            ;
@@ -76,7 +76,9 @@ BEGIN
     END CASE;
   END IF;
 
-  VAR_in := coalesce(VAR_in, 'NULL');
+  IF (VAR_in IS NULL OR VAR_in = '') THEN
+    VAR_in := 'NULL';
+  END IF;
 
   SELECT * INTO VAR_circ_deps, VAR_flat_graph FROM _recursively_delete(ARG_table, VAR_pk_col_names);
 
