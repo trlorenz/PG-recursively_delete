@@ -61,7 +61,7 @@ BEGIN
   END IF;
 
   <<FK_CON>>
-  FOR VAR_fk_con_rec IN (SELECT * FROM v_fk_cons WHERE ptab_oid = ARG_table) LOOP
+  FOR VAR_fk_con_rec IN (SELECT * FROM v_fk_cons WHERE ptab_oid = ARG_table ORDER BY name) LOOP
     VAR_path_pos_of_oid := array_position(_ARG_path, VAR_fk_con_rec.oid::TEXT);
 
     IF VAR_path_pos_of_oid IS NOT NULL THEN
