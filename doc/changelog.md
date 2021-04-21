@@ -1,3 +1,7 @@
+v0.1.3 - 2021-04-20
+
+  * Removed `ORDER BY` from view.
+
 v0.1.2 - 2020-12-31
 
   * Fixed borked CTE aux statement being generated when VAR_in resolves to NULL or an empty STRING.
