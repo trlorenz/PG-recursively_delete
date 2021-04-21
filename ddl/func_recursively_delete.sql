@@ -6,7 +6,7 @@ CREATE FUNCTION recursively_delete(
   ARG_for_realz BOOL       DEFAULT FALSE
 ) RETURNS INT AS $$
 DECLARE
-  VAR_version               TEXT      DEFAULT '0.1.2'        ;
+  VAR_version               TEXT      DEFAULT '0.1.3'        ;
   --
   VAR_circ_dep              JSONB                            ;
   VAR_circ_depper           JSONB                            ;

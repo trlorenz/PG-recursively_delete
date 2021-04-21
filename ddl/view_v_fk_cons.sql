@@ -92,5 +92,4 @@ SELECT
 FROM fk_constraints
   INNER JOIN ctab_pk_attrs USING (oid)
   INNER JOIN ctab_fk_attrs USING (oid)
-  INNER JOIN ptab_uk_attrs USING (oid)
-ORDER BY fk_constraints.name;
+  INNER JOIN ptab_uk_attrs USING (oid);
