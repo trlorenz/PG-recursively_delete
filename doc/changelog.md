@@ -1,3 +1,7 @@
+v0.1.4 - 2021-04-22
+
+  * Extensionized. Thanks to David Fetter.
+
 v0.1.3 - 2021-04-20
 
   * Removed `ORDER BY` from view.

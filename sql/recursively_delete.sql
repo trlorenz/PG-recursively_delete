@@ -215,7 +215,7 @@ CREATE FUNCTION recursively_delete(
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  VAR_version               TEXT      DEFAULT '0.1.3'        ;
+  VAR_version               TEXT      DEFAULT '0.1.4'        ;
   --
   VAR_circ_dep              JSONB                            ;
   VAR_circ_depper           JSONB                            ;
