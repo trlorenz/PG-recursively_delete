@@ -1,4 +1,4 @@
 # recursively_delete extension
 comment = 'Delete records and foreign-key dependents, regardless of constraint type'
-default_version = '0.1.4'
+default_version = '0.1.5'
 relocatable = true

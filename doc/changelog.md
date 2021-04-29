@@ -1,3 +1,7 @@
+v0.1.5 - 2021-04-22
+
+  * Added explicit support for BIGINT keys.
+
 v0.1.4 - 2021-04-22
 
   * Extensionized. Thanks to David Fetter.
