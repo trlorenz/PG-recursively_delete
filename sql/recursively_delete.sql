@@ -118,7 +118,7 @@ DECLARE
   VAR_i                 INT   ;
   VAR_path_pos_of_oid   INT   ;
 BEGIN
-  IF _ARG_depth = 0 THEN
+  IF VAR_ctab_fk_col_names THEN
     _ARG_path := _ARG_path || ARRAY['ROOT'];
 
     VAR_ctab_pk_col_names := array_to_json(ARG_pk_col_names)::JSONB;
@@ -240,7 +240,12 @@ DECLARE
   VAR_recursive_term_where  TEXT[]                           ;
   VAR_selects_for_union     TEXT[]                           ;
 BEGIN
-  -- ...
+  -- Determine the root table's primary key as an array of column names (with the columns in
+  -- definition order where the key is composite) and assign into VAR_pk_col_names. Note that while
+  -- similar SQL is in use in v_fk_cons for the c/ptab_* CTE aux statements, rows in v_fk_cons all
+  -- describe FK constraints. We're seeking the PK at the root of the graph; since no FK is yet
+  -- relevant, v_fk_cons is of no use here.
+  --
   SELECT array_agg(pg_attribute.attname ORDER BY pg_index.indkey_subscript) AS ptab_pk_col_names INTO VAR_pk_col_names
   FROM
     pg_attribute
@@ -253,6 +258,17 @@ BEGIN
   WHERE
     pg_attribute.attrelid = ARG_table;
 
+  -- Verify that ARG_in is consistent with VAR_pk_col_names in both number and type, and translate
+  -- it to VAR_in, a string appropriate for interpolation into an IN clause:
+  --
+  --   SELECT <VAR_ctab_pk_cols_list> FROM <VAR_flat_graph_node->>'ctab_name'> WHERE (<VAR_ctab_fk_cols_list>) IN (<VAR_in>)
+  --
+  -- Note that, at the initial recursion, as a special case, we'll be passing VAR_pk_col_names to
+  -- _recursively_delete(). Accordingly, in the bootstrap CTE aux statement, VAR_ctab_fk_cols_list
+  -- (despite its name) will contain the root PK.
+  --
+  -- TWIMC: If there's a cleaner way to process arguments like this, I'd be happy to know it.
+  --
   IF array_length(VAR_pk_col_names, 1) = 1 THEN
     CASE pg_typeof(ARG_in)::TEXT
       WHEN 'character varying', 'text', 'uuid' THEN
@@ -285,6 +301,9 @@ BEGIN
     END CASE;
   END IF;
 
+  -- In cases where VAR_in resolves to nothing (either NULL or an empty string), set it to the
+  -- string 'NULL', which in the bootstrap CTE aux statement will correctly yield an empty-set-
+  -- returning SELECT.
   IF (VAR_in IS NULL OR VAR_in = '') THEN
     VAR_in := 'NULL';
   END IF;
