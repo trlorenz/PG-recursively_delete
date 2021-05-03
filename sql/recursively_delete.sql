@@ -215,7 +215,7 @@ CREATE FUNCTION recursively_delete(
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  VAR_version               TEXT      DEFAULT '0.1.4'        ;
+  VAR_version               TEXT      DEFAULT '0.1.5'        ;
   --
   VAR_circ_dep              JSONB                            ;
   VAR_circ_depper           JSONB                            ;
@@ -257,11 +257,11 @@ BEGIN
     CASE pg_typeof(ARG_in)::TEXT
       WHEN 'character varying', 'text', 'uuid' THEN
         VAR_in := format('%L', ARG_in);
-      WHEN 'character varying[]', 'text[]', 'uuid' THEN
+      WHEN 'character varying[]', 'text[]', 'uuid[]' THEN
         VAR_in := string_agg(format('%L', ael), ', ') FROM unnest(ARG_in) ael;
-      WHEN 'integer' THEN
+      WHEN 'bigint', 'integer' THEN
         VAR_in := ARG_in;
-      WHEN 'integer[]' THEN
+      WHEN 'bigint[]', 'integer[]' THEN
         VAR_in := array_to_string(ARG_in, ', ');
       ELSE
         RAISE 'ARG_in "%" is of an unexpected type: %', ARG_in, pg_typeof(ARG_in);
@@ -274,7 +274,7 @@ BEGIN
         ELSE
           VAR_in := string_agg(format('(%s)', (SELECT string_agg(format('%L', ael), ', ') FROM jsonb_array_elements_text(ael) ael)), ', ') FROM jsonb_array_elements(array_to_json(ARG_in)::JSONB) ael;
         END IF;
-      WHEN 'integer[]' THEN
+      WHEN 'bigint[]', 'integer[]' THEN
         IF array_ndims(ARG_in) = 1 THEN
           VAR_in := format('(%s)', array_to_string(ARG_in, ', '));
         ELSE
