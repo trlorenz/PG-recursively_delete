@@ -118,7 +118,7 @@ DECLARE
   VAR_i                 INT   ;
   VAR_path_pos_of_oid   INT   ;
 BEGIN
-  IF VAR_ctab_fk_col_names THEN
+  IF ARG_pk_col_names THEN
     _ARG_path := _ARG_path || ARRAY['ROOT'];
 
     VAR_ctab_pk_col_names := array_to_json(ARG_pk_col_names)::JSONB;
