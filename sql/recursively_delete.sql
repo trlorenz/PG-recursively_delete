@@ -2,6 +2,7 @@
 
 SET client_min_messages = warning;
 
+-- DROP VIEW IF EXISTS v_fk_cons;
 CREATE VIEW v_fk_cons AS
 WITH
 fk_constraints AS (
@@ -96,6 +97,7 @@ FROM fk_constraints
   INNER JOIN ctab_fk_attrs USING (oid)
   INNER JOIN ptab_uk_attrs USING (oid);
 
+-- DROP FUNCTION IF EXISTS _recursively_delete;
 CREATE FUNCTION _recursively_delete(
          ARG_table           REGCLASS                         ,
          ARG_pk_col_names    TEXT[]                           ,
@@ -118,7 +120,7 @@ DECLARE
   VAR_i                 INT   ;
   VAR_path_pos_of_oid   INT   ;
 BEGIN
-  IF ARG_pk_col_names THEN
+  IF ARG_pk_col_names IS NOT NULL THEN
     _ARG_path := _ARG_path || ARRAY['ROOT'];
 
     VAR_ctab_pk_col_names := array_to_json(ARG_pk_col_names)::JSONB;
@@ -154,6 +156,10 @@ BEGIN
     'ptab_uk_col_names', _ARG_fk_con->'ptab_uk_col_names'
   );
 
+  -- 'SET DEFAULT' and 'SET NULL' FK constraints are meant expressly to prevent deletion from
+  -- cascading to the records they monitor, instead taking some other integrity-preserving action.
+  -- For such constraints encountered at this level of recursion, early out and return. We'll thus
+  -- explore no additional depth for the flat graph.
   IF _ARG_fk_con->>'delete_action' IN ('d', 'n') THEN
     RETURN;
   END IF;
@@ -205,8 +211,7 @@ BEGIN
 END;
 $$;
 
-DROP FUNCTION IF EXISTS recursively_delete;
-
+-- DROP FUNCTION IF EXISTS recursively_delete;
 CREATE FUNCTION recursively_delete(
   ARG_table     REGCLASS                ,
   ARG_in        ANYELEMENT              ,
@@ -245,7 +250,6 @@ BEGIN
   -- similar SQL is in use in v_fk_cons for the c/ptab_* CTE aux statements, rows in v_fk_cons all
   -- describe FK constraints. We're seeking the PK at the root of the graph; since no FK is yet
   -- relevant, v_fk_cons is of no use here.
-  --
   SELECT array_agg(pg_attribute.attname ORDER BY pg_index.indkey_subscript) AS ptab_pk_col_names INTO VAR_pk_col_names
   FROM
     pg_attribute
@@ -268,7 +272,6 @@ BEGIN
   -- (despite its name) will contain the root PK.
   --
   -- TWIMC: If there's a cleaner way to process arguments like this, I'd be happy to know it.
-  --
   IF array_length(VAR_pk_col_names, 1) = 1 THEN
     CASE pg_typeof(ARG_in)::TEXT
       WHEN 'character varying', 'text', 'uuid' THEN
@@ -301,10 +304,11 @@ BEGIN
     END CASE;
   END IF;
 
-  -- In cases where VAR_in resolves to nothing (either NULL or an empty string), set it to the
-  -- string 'NULL', which in the bootstrap CTE aux statement will correctly yield an empty-set-
-  -- returning SELECT.
   IF (VAR_in IS NULL OR VAR_in = '') THEN
+  --^ In cases where VAR_in resolves to nothing (either NULL or an empty string)...
+    --
+    -- ...set it to the string 'NULL', which in the bootstrap CTE aux statement will correctly yield
+    -- an empty-set-returning SELECT.
     VAR_in := 'NULL';
   END IF;
 
@@ -312,7 +316,15 @@ BEGIN
 
   FOR VAR_flat_graph_node IN SELECT jsonb_array_elements(VAR_flat_graph) LOOP
     IF VAR_flat_graph_node->>'delete_action' IN ('d', 'n') THEN
-      VAR_cte_aux_stmts := VAR_cte_aux_stmts || format('%I AS (SELECT NULL)', VAR_flat_graph_node->>'cte_aux_stmt_name');
+    --^ If the node's delete action is 'SET DEFAULT' or 'SET NULL'...
+      --
+      -- ...push onto VAR_cte_aux_stmts an empty set-returning CTE aux statement, something like:
+      --
+      --   "del_3$11092287" AS (SELECT NULL WHERE FALSE)
+      --
+      -- This will avoid the deletion of any records for the node, while preserving the node's
+      -- standing in the final SQL for presentation of the damage preview.
+      VAR_cte_aux_stmts := VAR_cte_aux_stmts || format('%I AS (SELECT NULL WHERE FALSE)', VAR_flat_graph_node->>'cte_aux_stmt_name');
     ELSE
       VAR_recursive_term := NULL;
 
@@ -398,9 +410,10 @@ BEGIN
   END LOOP;
 
   FOR VAR_flat_graph_node IN SELECT jsonb_array_elements(VAR_flat_graph) LOOP
-    VAR_selects_for_union := VAR_selects_for_union || format('SELECT %L AS queue_i, count(*) AS n_del FROM %I',
-      VAR_flat_graph_node->>'i', VAR_flat_graph_node->>'cte_aux_stmt_name'
-    );
+    VAR_selects_for_union :=
+      VAR_selects_for_union || format('SELECT %L AS queue_i, count(*) AS n_del FROM %I',
+        VAR_flat_graph_node->>'i', VAR_flat_graph_node->>'cte_aux_stmt_name'
+      );
   END LOOP;
 
   BEGIN
