@@ -392,7 +392,7 @@ BEGIN
             WITH RECURSIVE
             self_ref (%s) AS (
               SELECT %s FROM %s WHERE (%s) IN (%s)
-                UNION
+                UNION ALL
               %s
             )
             SELECT %s FROM self_ref
@@ -418,7 +418,7 @@ BEGIN
 
   BEGIN
     VAR_final_query := format('WITH %s %s',
-      array_to_string(VAR_cte_aux_stmts, ','), array_to_string(VAR_selects_for_union, ' UNION ')
+      array_to_string(VAR_cte_aux_stmts, ','), array_to_string(VAR_selects_for_union, ' UNION ALL ')
     );
 
     -- RAISE INFO '%', VAR_final_query;
