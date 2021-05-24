@@ -99,39 +99,39 @@ FROM fk_constraints
 
 -- DROP FUNCTION IF EXISTS _recursively_delete;
 CREATE FUNCTION _recursively_delete(
-         ARG_table           REGCLASS                         ,
-         ARG_pk_col_names    TEXT[]                           ,
-        _ARG_depth           INT      DEFAULT  0              ,
-        _ARG_fk_con          JSONB    DEFAULT  NULL           ,
-        _ARG_flat_graph_i_up INT      DEFAULT  NULL           ,
-        _ARG_path            TEXT[]   DEFAULT  ARRAY[]::TEXT[],
-  INOUT _ARG_circ_deps       JSONB    DEFAULT '[]'            ,
-  INOUT _ARG_flat_graph      JSONB    DEFAULT '[]'
+         ARG_table           REGCLASS                          ,
+         ARG_pk_col_names    TEXT[]                            ,
+        _ARG_depth           INT       DEFAULT  0              ,
+        _ARG_fk_con          v_fk_cons DEFAULT  NULL           ,
+        _ARG_flat_graph_i_up INT       DEFAULT  NULL           ,
+        _ARG_path            TEXT[]    DEFAULT  ARRAY[]::TEXT[],
+  INOUT _ARG_circ_deps       JSONB     DEFAULT '[]'            ,
+  INOUT _ARG_flat_graph      JSONB     DEFAULT '[]'
 )
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  VAR_circ_dep          JSONB ;
-  VAR_ctab_fk_col_names JSONB ;
-  VAR_ctab_pk_col_names JSONB ;
-  VAR_fk_con_rec        RECORD;
-  VAR_flat_graph_i      INT   ;
-  VAR_flat_graph_node   JSONB ;
-  VAR_i                 INT   ;
-  VAR_path_pos_of_oid   INT   ;
+  VAR_circ_dep          JSONB    ;
+  VAR_ctab_fk_col_names TEXT[]   ;
+  VAR_ctab_pk_col_names TEXT[]   ;
+  VAR_fk_con_rec        v_fk_cons;
+  VAR_flat_graph_i      INT      ;
+  VAR_flat_graph_node   JSONB    ;
+  VAR_i                 INT      ;
+  VAR_path_pos_of_oid   INT      ;
 BEGIN
   IF ARG_pk_col_names IS NOT NULL THEN
     _ARG_path := _ARG_path || ARRAY['ROOT'];
 
-    VAR_ctab_pk_col_names := array_to_json(ARG_pk_col_names)::JSONB;
+    VAR_ctab_pk_col_names := ARG_pk_col_names;
 
     -- Not really a statement of truth, but a convenient thing to pretend. For the initial
     -- "bootstrap" CTE auxiliary statement, this HACK takes care of equating the user's ARG_in with
     -- the table's primary key.
     VAR_ctab_fk_col_names := VAR_ctab_pk_col_names;
   ELSE
-    VAR_ctab_fk_col_names := _ARG_fk_con->>'ctab_fk_col_names';
-    VAR_ctab_pk_col_names := _ARG_fk_con->>'ctab_pk_col_names';
+    VAR_ctab_fk_col_names := _ARG_fk_con.ctab_fk_col_names;
+    VAR_ctab_pk_col_names := _ARG_fk_con.ctab_pk_col_names;
   END IF;
 
   VAR_flat_graph_i := jsonb_array_length(_ARG_flat_graph);
@@ -143,24 +143,24 @@ BEGIN
   -- flat graph, flat_graph_node->>'i_up' reports the index of the node's parent, which isn't
   -- necessarily i - 1.)
   _ARG_flat_graph := _ARG_flat_graph || jsonb_build_object(
-    'ctab_fk_col_names',  VAR_ctab_fk_col_names,
+    'ctab_fk_col_names',  array_to_json(VAR_ctab_fk_col_names)::JSONB,
     'ctab_name'        ,  ARG_table,
-    'ctab_oid'         , _ARG_fk_con->>'ctab_oid',
-    'ctab_pk_col_names',  VAR_ctab_pk_col_names,
+    'ctab_oid'         , _ARG_fk_con.ctab_oid,
+    'ctab_pk_col_names',  array_to_json(VAR_ctab_pk_col_names)::JSONB,
     'cte_aux_stmt_name',  format('del_%s$%s', VAR_flat_graph_i, _ARG_path[array_upper(_ARG_path, 1)]),
-    'delete_action'    , _ARG_fk_con->>'delete_action',
+    'delete_action'    , _ARG_fk_con.delete_action,
     'depth'            , _ARG_depth,
     'i'                ,  VAR_flat_graph_i,
     'i_up'             , _ARG_flat_graph_i_up,
     'path'             ,  array_to_json(_ARG_path)::JSONB,
-    'ptab_uk_col_names', _ARG_fk_con->'ptab_uk_col_names'
+    'ptab_uk_col_names', _ARG_fk_con.ptab_uk_col_names
   );
 
   -- 'SET DEFAULT' and 'SET NULL' FK constraints are meant expressly to prevent deletion from
   -- cascading to the records they monitor, instead taking some other integrity-preserving action.
   -- For such constraints encountered at this level of recursion, early out and return. We'll thus
   -- explore no additional depth for the flat graph.
-  IF _ARG_fk_con->>'delete_action' IN ('d', 'n') THEN
+  IF _ARG_fk_con.delete_action IN ('d', 'n') THEN
     RETURN;
   END IF;
 
@@ -200,7 +200,7 @@ BEGIN
        NULL,
        --
       _ARG_depth + 1,
-       row_to_json(VAR_fk_con_rec)::JSONB,
+       VAR_fk_con_rec,
        VAR_flat_graph_i,
       _ARG_path || VAR_fk_con_rec.oid::TEXT,
       --
