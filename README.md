@@ -22,6 +22,8 @@ Delete records and foreign-key dependents, regardless of constraint type.
 
 * `cd recursively_delete/`
 
+* `make`
+
 * `make install` (or `sudo make install`)
 
 * Log into your DB and `create extension recursively_delete;`
