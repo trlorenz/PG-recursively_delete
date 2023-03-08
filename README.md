@@ -40,7 +40,7 @@ recursively_delete(
 
 ##### ARG_table
 
-The table from which you'll be deleting records, with or without a qualifying schema.
+The root table from which you'll be deleting records, with or without a qualifying schema.
 
 ##### ARG_in
 
@@ -49,6 +49,7 @@ A specifier for the records you'll be deleting. Loosely speaking, this would be 
 ```PLpgSQL
 ...WHERE my_table.primary_key IN (ARG_in)...
 ```
+*Note that, currently, recursively_delete requires the root table to have a primary key, and will ignore any table without a primary key in the dependency graph. This should only be a problem if in your graph you've got a child table with an FK constraint referencing unique columns on a parent where that parent doesn't also have a primary key. If this affects you, and if you care enough to do so, kindly add an issue to the tracker.*
 
 Possibilities include:
 

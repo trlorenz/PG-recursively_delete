@@ -2,6 +2,7 @@
 
 SET client_min_messages = warning;
 
+-- DROP VIEW IF EXISTS v_fk_cons CASCADE;
 CREATE VIEW v_fk_cons AS
 WITH
 fk_constraints AS (
@@ -96,40 +97,89 @@ FROM fk_constraints
   INNER JOIN ctab_fk_attrs USING (oid)
   INNER JOIN ptab_uk_attrs USING (oid);
 
+-- DROP FUNCTION IF EXISTS _recursively_delete CASCADE;
+
+-- _recursively_delete (note the leading underscore) is the recursive component of the
+-- recursively_delete extension; it's called once by recursively_delete, and then continues calling
+-- itself until the entire foreign key dependency graph stemming from the root table is traversed.
+-- Its purpose is to build up INOUT arguments _ARG_flat_graph and _ARG_circ_deps for final return to
+-- recursively_delete.
+--
+-- SIGNATURE:
+--
+-- ARG_table: For the FK constraint at the current level of recursion, the REGCLASS of the table
+-- upon which the constraint is defined (or else, at the beginning of recursion, the root table).
+--
+-- ARG_root_pk_col_names: An array containing the names of the primary key columns of the root
+-- table, in definition order. This argument will be NOT NULL only at the beginning of recursion,
+-- upon the initial call to _recursively_delete.
+--
+-- (Note: Arguments named _ARG_* are so named (with a leading underscore) to indicate that they're
+-- supplied only during recursion, not at the initial call.)
+--
+-- _ARG_depth: The current recursion depth.
+--
+-- _ARG_fk_con_rec: For the FK constraint at the current level of recursion, the corresponding
+-- v_fk_cons record.
+--
+-- _ARG_flat_graph_i_up: For the FK constraint at the current level of recursion, the index in the
+-- flat graph of the constraint's parent.
+--
+-- _ARG_path: An array of the OIDs of all the FK constraints along this branch of the graph,
+-- starting with the root and ending with the FK constraint at the current level of recursion.
+-- (Since there is no relevant FK constraint at the root itself, the text 'ROOT' is used instead of
+-- an OID.) Paths are used in the naming of CTE aux statements in the final query; in the detection
+-- circular dependencies; and in the presentation of the damage preview.
+--
+-- _ARG_flat_graph: A JSON array, each element of which will represent a node in the foreign key
+-- dependency graph. A "node" is an object of several attributes describing a single foreign key
+-- constraint and its recursion context. Nodes in the flat graph collection are arranged in
+-- visitation order.
+--
+-- _ARG_circ_deps: A JSON array, each element of which will be an array representing one circular
+-- dependency in the foreign key dependency graph. This representation comprises an interdependent
+-- series of nodes from the flat graph, where the first element in the series points back to the
+-- last. It's used during construction of the final query to set up recursive CTE linkages.
+--
 CREATE FUNCTION _recursively_delete(
-         ARG_table           REGCLASS                         ,
-         ARG_pk_col_names    TEXT[]                           ,
-        _ARG_depth           INT      DEFAULT  0              ,
-        _ARG_fk_con          JSONB    DEFAULT  NULL           ,
-        _ARG_flat_graph_i_up INT      DEFAULT  NULL           ,
-        _ARG_path            TEXT[]   DEFAULT  ARRAY[]::TEXT[],
-  INOUT _ARG_circ_deps       JSONB    DEFAULT '[]'            ,
-  INOUT _ARG_flat_graph      JSONB    DEFAULT '[]'
+         ARG_table             REGCLASS                          ,
+         ARG_root_pk_col_names TEXT[]                            ,
+        _ARG_depth             INT       DEFAULT  0              ,
+        _ARG_fk_con_rec        v_fk_cons DEFAULT  NULL           ,
+        _ARG_flat_graph_i_up   INT       DEFAULT  NULL           ,
+        _ARG_path              TEXT[]    DEFAULT  ARRAY[]::TEXT[],
+  INOUT _ARG_flat_graph        JSONB     DEFAULT '[]'            ,
+  INOUT _ARG_circ_deps         JSONB     DEFAULT '[]'
 )
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  VAR_circ_dep          JSONB ;
-  VAR_ctab_fk_col_names JSONB ;
-  VAR_ctab_pk_col_names JSONB ;
-  VAR_fk_con_rec        RECORD;
-  VAR_flat_graph_i      INT   ;
-  VAR_flat_graph_node   JSONB ;
-  VAR_i                 INT   ;
-  VAR_path_pos_of_oid   INT   ;
+  VAR_circ_dep          JSONB    ;
+  VAR_ctab_fk_col_names TEXT[]   ;
+  VAR_ctab_pk_col_names TEXT[]   ;
+  VAR_fk_con_rec        v_fk_cons;
+  VAR_flat_graph_i      INT      ;
+  VAR_flat_graph_node   JSONB    ;
+  VAR_i                 INT      ;
+  VAR_path_pos_of_oid   INT      ;
 BEGIN
-  IF _ARG_depth = 0 THEN
+  IF ARG_root_pk_col_names IS NOT NULL THEN
+  --^ The presence of ARG_root_pk_col_names signals that we're in the very first call to
+  -- _recursively_delete. In this case, there's some "bootstrapping" to do.
+
+    -- We initialize the array _ARG_path with path segment 'ROOT'.
     _ARG_path := _ARG_path || ARRAY['ROOT'];
 
-    VAR_ctab_pk_col_names := array_to_json(ARG_pk_col_names)::JSONB;
+    -- ...
+    VAR_ctab_pk_col_names := ARG_root_pk_col_names;
 
     -- Not really a statement of truth, but a convenient thing to pretend. For the initial
     -- "bootstrap" CTE auxiliary statement, this HACK takes care of equating the user's ARG_in with
     -- the table's primary key.
     VAR_ctab_fk_col_names := VAR_ctab_pk_col_names;
   ELSE
-    VAR_ctab_fk_col_names := _ARG_fk_con->>'ctab_fk_col_names';
-    VAR_ctab_pk_col_names := _ARG_fk_con->>'ctab_pk_col_names';
+    VAR_ctab_fk_col_names := _ARG_fk_con_rec.ctab_fk_col_names;
+    VAR_ctab_pk_col_names := _ARG_fk_con_rec.ctab_pk_col_names;
   END IF;
 
   VAR_flat_graph_i := jsonb_array_length(_ARG_flat_graph);
@@ -141,20 +191,24 @@ BEGIN
   -- flat graph, flat_graph_node->>'i_up' reports the index of the node's parent, which isn't
   -- necessarily i - 1.)
   _ARG_flat_graph := _ARG_flat_graph || jsonb_build_object(
-    'ctab_fk_col_names',  VAR_ctab_fk_col_names,
+    'ctab_fk_col_names',  array_to_json(VAR_ctab_fk_col_names)::JSONB,
     'ctab_name'        ,  ARG_table,
-    'ctab_oid'         , _ARG_fk_con->>'ctab_oid',
-    'ctab_pk_col_names',  VAR_ctab_pk_col_names,
+    'ctab_oid'         , _ARG_fk_con_rec.ctab_oid,
+    'ctab_pk_col_names',  array_to_json(VAR_ctab_pk_col_names)::JSONB,
     'cte_aux_stmt_name',  format('del_%s$%s', VAR_flat_graph_i, _ARG_path[array_upper(_ARG_path, 1)]),
-    'delete_action'    , _ARG_fk_con->>'delete_action',
+    'delete_action'    , _ARG_fk_con_rec.delete_action,
     'depth'            , _ARG_depth,
     'i'                ,  VAR_flat_graph_i,
     'i_up'             , _ARG_flat_graph_i_up,
     'path'             ,  array_to_json(_ARG_path)::JSONB,
-    'ptab_uk_col_names', _ARG_fk_con->'ptab_uk_col_names'
+    'ptab_uk_col_names', _ARG_fk_con_rec.ptab_uk_col_names
   );
 
-  IF _ARG_fk_con->>'delete_action' IN ('d', 'n') THEN
+  -- 'SET DEFAULT' and 'SET NULL' FK constraints are meant expressly to prevent deletion from
+  -- cascading to the records they monitor, instead taking some other integrity-preserving action.
+  -- For such constraints encountered at this level of recursion, early out and return. We'll thus
+  -- explore no additional depth for the flat graph.
+  IF _ARG_fk_con_rec.delete_action IN ('d', 'n') THEN
     RETURN;
   END IF;
 
@@ -188,25 +242,24 @@ BEGIN
       CONTINUE FK_CON;
     END IF;
 
-    SELECT * INTO _ARG_circ_deps, _ARG_flat_graph
+    SELECT * INTO _ARG_flat_graph, _ARG_circ_deps
     FROM _recursively_delete(
        format('%I.%I', VAR_fk_con_rec.ctab_schema_name, VAR_fk_con_rec.ctab_name),
        NULL,
        --
       _ARG_depth + 1,
-       row_to_json(VAR_fk_con_rec)::JSONB,
+       VAR_fk_con_rec,
        VAR_flat_graph_i,
       _ARG_path || VAR_fk_con_rec.oid::TEXT,
       --
-      _ARG_circ_deps,
-      _ARG_flat_graph
+      _ARG_flat_graph,
+      _ARG_circ_deps
     );
   END LOOP;
 END;
 $$;
 
-DROP FUNCTION IF EXISTS recursively_delete;
-
+-- DROP FUNCTION IF EXISTS recursively_delete CASCADE;
 CREATE FUNCTION recursively_delete(
   ARG_table     REGCLASS                ,
   ARG_in        ANYELEMENT              ,
@@ -240,7 +293,11 @@ DECLARE
   VAR_recursive_term_where  TEXT[]                           ;
   VAR_selects_for_union     TEXT[]                           ;
 BEGIN
-  -- ...
+  -- Determine the root table's primary key as an array of column names (with the columns in
+  -- definition order where the key is composite) and assign into VAR_pk_col_names. Note that while
+  -- similar SQL is in use in v_fk_cons for the c/ptab_* CTE aux statements, rows in v_fk_cons all
+  -- describe FK constraints. We're seeking the PK at the root of the graph; since no FK is yet
+  -- relevant, v_fk_cons is of no use here.
   SELECT array_agg(pg_attribute.attname ORDER BY pg_index.indkey_subscript) AS ptab_pk_col_names INTO VAR_pk_col_names
   FROM
     pg_attribute
@@ -253,6 +310,16 @@ BEGIN
   WHERE
     pg_attribute.attrelid = ARG_table;
 
+  -- Verify that ARG_in is consistent with VAR_pk_col_names in both number and type, and translate
+  -- it to VAR_in, a string appropriate for interpolation into an IN clause:
+  --
+  --   SELECT <VAR_ctab_pk_cols_list> FROM <VAR_flat_graph_node->>'ctab_name'> WHERE (<VAR_ctab_fk_cols_list>) IN (<VAR_in>)
+  --
+  -- Note that, at the initial recursion, as a special case, we'll be passing VAR_pk_col_names to
+  -- _recursively_delete(). Accordingly, in the bootstrap CTE aux statement, VAR_ctab_fk_cols_list
+  -- (despite its name) will contain the root PK.
+  --
+  -- TWIMC: If there's a cleaner way to process arguments like this, I'd be happy to know it.
   IF array_length(VAR_pk_col_names, 1) = 1 THEN
     CASE pg_typeof(ARG_in)::TEXT
       WHEN 'character varying', 'text', 'uuid' THEN
@@ -286,14 +353,26 @@ BEGIN
   END IF;
 
   IF (VAR_in IS NULL OR VAR_in = '') THEN
+  --^ In cases where VAR_in resolves to nothing (either NULL or an empty string)...
+    --
+    -- ...set it to the string 'NULL', which in the bootstrap CTE aux statement will correctly yield
+    -- an empty-set-returning SELECT.
     VAR_in := 'NULL';
   END IF;
 
-  SELECT * INTO VAR_circ_deps, VAR_flat_graph FROM _recursively_delete(ARG_table, VAR_pk_col_names);
+  SELECT * INTO VAR_flat_graph, VAR_circ_deps FROM _recursively_delete(ARG_table, VAR_pk_col_names);
 
   FOR VAR_flat_graph_node IN SELECT jsonb_array_elements(VAR_flat_graph) LOOP
     IF VAR_flat_graph_node->>'delete_action' IN ('d', 'n') THEN
-      VAR_cte_aux_stmts := VAR_cte_aux_stmts || format('%I AS (SELECT NULL)', VAR_flat_graph_node->>'cte_aux_stmt_name');
+    --^ If the node's delete action is 'SET DEFAULT' or 'SET NULL'...
+      --
+      -- ...push onto VAR_cte_aux_stmts an empty set-returning CTE aux statement, something like:
+      --
+      --   "del_3$11092287" AS (SELECT NULL WHERE FALSE)
+      --
+      -- This will avoid the deletion of any records for the node, while preserving the node's
+      -- standing in the final SQL for presentation of the damage preview.
+      VAR_cte_aux_stmts := VAR_cte_aux_stmts || format('%I AS (SELECT NULL WHERE FALSE)', VAR_flat_graph_node->>'cte_aux_stmt_name');
     ELSE
       VAR_recursive_term := NULL;
 
@@ -361,7 +440,7 @@ BEGIN
             WITH RECURSIVE
             self_ref (%s) AS (
               SELECT %s FROM %s WHERE (%s) IN (%s)
-                UNION
+                UNION ALL
               %s
             )
             SELECT %s FROM self_ref
@@ -379,14 +458,15 @@ BEGIN
   END LOOP;
 
   FOR VAR_flat_graph_node IN SELECT jsonb_array_elements(VAR_flat_graph) LOOP
-    VAR_selects_for_union := VAR_selects_for_union || format('SELECT %L AS queue_i, count(*) AS n_del FROM %I',
-      VAR_flat_graph_node->>'i', VAR_flat_graph_node->>'cte_aux_stmt_name'
-    );
+    VAR_selects_for_union :=
+      VAR_selects_for_union || format('SELECT %L AS queue_i, count(*) AS n_del FROM %I',
+        VAR_flat_graph_node->>'i', VAR_flat_graph_node->>'cte_aux_stmt_name'
+      );
   END LOOP;
 
   BEGIN
     VAR_final_query := format('WITH %s %s',
-      array_to_string(VAR_cte_aux_stmts, ','), array_to_string(VAR_selects_for_union, ' UNION ')
+      array_to_string(VAR_cte_aux_stmts, ','), array_to_string(VAR_selects_for_union, ' UNION ALL ')
     );
 
     -- RAISE INFO '%', VAR_final_query;
